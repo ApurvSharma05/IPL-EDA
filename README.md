@@ -31,8 +31,9 @@ A **comprehensive EDA** of IPL ball-by-ball data covering seasons 2008–2025, b
 ## 🏗️ Project Structure
 
 ```
-IPL_EDA_Improved.ipynb
-├── Section 0 – Setup & Libraries
+notebooks/
+└── IPL_EDA_Improved.ipynb
+    ├── Section 0 – Setup & Libraries
 ├── Section 1 – Data Loading & Overview
 ├── Section 2 – Data Cleaning & Preparation
 ├── Section 3 – Match Analysis (matches per season)
@@ -67,7 +68,7 @@ IPL_EDA_Improved.ipynb
 ### Installation
 ```bash
 pip install pandas numpy matplotlib seaborn kagglehub
-jupyter notebook IPL_EDA_Improved.ipynb
+jupyter notebook notebooks/IPL_EDA_Improved.ipynb
 ```
 
 ### Quick Start
