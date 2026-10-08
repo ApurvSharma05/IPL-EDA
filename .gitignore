@@ -10,15 +10,20 @@ venv.bak/
 # Jupyter Notebook
 .ipynb_checkpoints
 
-# Datasets and Outputs
-*.csv
-*.xlsx
-*.parquet
-data/
-outputs/
-dataset/
-
-# Python
+# Testing & Cache
+.pytest_cache/
 __pycache__/
 *.py[cod]
 *$py.class
+
+# Large Datasets and Outputs
+*.xlsx
+*.parquet
+data/IPL.csv
+data/ipl_cleaned_data.csv
+outputs/
+dataset/
+
+# Allow sample data and summary statistics in git
+!data/sample_deliveries.csv
+!data/summary_statistics.csv
