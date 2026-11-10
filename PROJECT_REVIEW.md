@@ -659,7 +659,7 @@ See "Fixed after the first build" at the top for the table. In short: API tests 
 | **6. Automated Test Suite (Pytest)** | Testing | 25 unit and integration tests covering cleaning, metrics, API, and validation, on in-memory fixtures (no data files needed; first build had 15 and needed the cleaned CSV) | **MEDIUM** | ✅ **COMPLETED & VERIFIED** ([`tests/`](file:///d:/Desktop/PROJECTS/EDA/tests)) |
 | **7. GitHub Actions CI Pipeline** | CI/CD | Installs dependencies, runs tests, and runs the CLI (`--skip-validation`) on pushes and PRs to `main` | **MEDIUM** | ✅ **COMPLETED & VERIFIED** ([`.github/workflows/ci.yml`](file:///d:/Desktop/PROJECTS/EDA/.github/workflows/ci.yml)) |
 | **8. Interactive Streamlit / Evidence Dashboard** | Frontend | Dynamic UI for non-technical stakeholders to slice metrics by venue and season | **LOW** | 📋 *Future Phase* |
-| **9. MCP Server for LLM Data Querying** | GenAI / Agents | Exposes cricket metrics tools to Anthropic Claude or AI agents via Model Context Protocol | **LOW** | 📋 *Future Phase* |
+| **9. MCP Server for LLM Data Querying** | GenAI / Agents | Exposes cricket metrics tools to LLM agents via Model Context Protocol | **LOW** | 📋 *Future Phase* |
 
 ---
 
