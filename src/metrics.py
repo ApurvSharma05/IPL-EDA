@@ -1,11 +1,14 @@
 """Pure analytical and statistical aggregation metrics for IPL telemetry."""
 
 import logging
-from typing import Dict, Tuple
+from typing import Any, Dict, Tuple
 import numpy as np
 import pandas as pd
 
 from src.config import (
+    MIN_BATTER_MATCHES_FILTER,
+    MIN_BOWLER_OVERS_FILTER,
+    MIN_TEAM_MATCHES_CONSISTENCY,
     PHASE_ORDER,
     TARGET_HIGH,
     TARGET_LOW,
@@ -14,6 +17,94 @@ from src.config import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+# --- Shared metric formulas (single source of truth for the API and the metrics module) ---
+
+def _safe_ratio(numerator, denominator, decimals: int = 2):
+    """Rounded numerator / denominator; 0.0 wherever the denominator is not positive.
+
+    Works on plain numbers and on aligned pandas Series, so row-level (API) and
+    leaderboard-level (groupby) code share exactly one implementation.
+    """
+    if np.ndim(denominator) == 0:
+        if denominator <= 0:
+            return 0.0
+        return round(float(numerator) / float(denominator), decimals)
+    ratio = numerator / denominator.where(denominator > 0)
+    return ratio.fillna(0.0).round(decimals)
+
+
+def balls_to_overs(balls):
+    """Converts a ball count to fractional overs (balls / 6). Never rounded here."""
+    return balls / 6.0
+
+
+def strike_rate(runs, balls):
+    """Batting strike rate: runs per 100 balls."""
+    return _safe_ratio(runs * 100, balls)
+
+
+def economy_rate(runs_conceded, balls):
+    """Bowling economy: runs conceded per over, computed from balls / 6 without pre-rounding overs."""
+    return _safe_ratio(runs_conceded, balls_to_overs(balls))
+
+
+def per_match(total, matches):
+    """Average of a counting stat per match played."""
+    return _safe_ratio(total, matches)
+
+
+def resolve_bowling_columns(df: pd.DataFrame) -> Tuple[str, str]:
+    """Returns (runs_conceded_column, bowler_wicket_column) for the given schema.
+
+    Note: `is_wicket` in the cleaned data is bowler-credited wickets only (it equals the raw
+    `bowler_wicket` flag and excludes run outs, retired out, etc.). See `count_dismissals`
+    for every dismissal.
+    """
+    runs_col = "runs_conceded_bowler" if "runs_conceded_bowler" in df.columns else "runs_total"
+    wicket_col = "is_wicket" if "is_wicket" in df.columns else "wickets"
+    return runs_col, wicket_col
+
+
+def count_dismissals(df: pd.DataFrame) -> int:
+    """Total dismissals of any kind (bowler-credited wickets plus run outs and similar).
+
+    On the full dataset this is larger than `df["is_wicket"].sum()` (14,705 vs 13,488),
+    because `is_wicket` only counts wickets credited to the bowler.
+    """
+    dismissed = df["player_dismissed"]
+    return int((dismissed.notna() & (dismissed != "Not Out")).sum())
+
+
+def summarize_batter(player_df: pd.DataFrame) -> Dict[str, Any]:
+    """Career batting line for the deliveries faced by one batter."""
+    runs = int(player_df["runs"].sum())
+    balls = int(len(player_df))
+    matches = int(player_df["match_id"].nunique())
+    return {
+        "total_runs": runs,
+        "balls_faced": balls,
+        "strike_rate": strike_rate(runs, balls),
+        "matches_played": matches,
+        "runs_per_match": per_match(runs, matches),
+    }
+
+
+def summarize_bowler(player_df: pd.DataFrame) -> Dict[str, Any]:
+    """Career bowling line for the deliveries bowled by one bowler (bowler-credited wickets)."""
+    runs_col, wicket_col = resolve_bowling_columns(player_df)
+    runs = int(player_df[runs_col].sum())
+    wickets = int(player_df[wicket_col].sum())
+    balls = int(len(player_df))
+    matches = int(player_df["match_id"].nunique())
+    return {
+        "wickets": wickets,
+        "runs_conceded": runs,
+        "overs_bowled": round(balls_to_overs(balls), 1),
+        "economy_rate": economy_rate(runs, balls),
+        "wickets_per_match": per_match(wickets, matches),
+    }
 
 
 def get_season_match_counts(df: pd.DataFrame) -> pd.DataFrame:
@@ -71,7 +162,7 @@ def get_team_win_statistics(df: pd.DataFrame, min_matches: int = 0) -> pd.DataFr
 
 def get_top_batsmen(
     df: pd.DataFrame,
-    min_matches: int = 10,
+    min_matches: int = MIN_BATTER_MATCHES_FILTER,
     limit: int = 15,
 ) -> pd.DataFrame:
     """Aggregates all-time batting performance metrics (runs, strike rate, average)."""
@@ -86,12 +177,8 @@ def get_top_batsmen(
     )
 
     batter_stats = batter_stats[batter_stats["matches_played"] >= min_matches].copy()
-    batter_stats["strike_rate"] = (
-        (batter_stats["total_runs"] / batter_stats["balls_faced"]) * 100
-    ).round(2)
-    batter_stats["runs_per_match"] = (
-        batter_stats["total_runs"] / batter_stats["matches_played"]
-    ).round(2)
+    batter_stats["strike_rate"] = strike_rate(batter_stats["total_runs"], batter_stats["balls_faced"])
+    batter_stats["runs_per_match"] = per_match(batter_stats["total_runs"], batter_stats["matches_played"])
 
     top_batsmen = (
         batter_stats.sort_values(by="total_runs", ascending=False)
@@ -103,15 +190,15 @@ def get_top_batsmen(
 
 def get_top_bowlers(
     df: pd.DataFrame,
-    min_overs: float = 20.0,
+    min_overs: float = MIN_BOWLER_OVERS_FILTER,
     limit: int = 15,
 ) -> pd.DataFrame:
     """Aggregates all-time bowling performance metrics (wickets, economy, average).
 
-    Uses accurate legal/total deliveries and bowler conceded runs.
+    Uses all delivery rows as balls bowled and bowler-conceded runs. `wickets` counts
+    bowler-credited wickets only (run outs are excluded); see `count_dismissals`.
     """
-    runs_col = "runs_conceded_bowler" if "runs_conceded_bowler" in df.columns else "runs_total"
-    wicket_col = "is_wicket" if "is_wicket" in df.columns else "wickets"
+    runs_col, wicket_col = resolve_bowling_columns(df)
 
     bowler_stats = (
         df.groupby("bowler")
@@ -124,15 +211,11 @@ def get_top_bowlers(
         .reset_index()
     )
 
-    bowler_stats["overs"] = (bowler_stats["balls_bowled"] / 6.0).round(1)
-    bowler_stats = bowler_stats[bowler_stats["overs"] >= min_overs].copy()
+    bowler_stats = bowler_stats[balls_to_overs(bowler_stats["balls_bowled"]) >= min_overs].copy()
 
-    bowler_stats["economy_rate"] = (
-        bowler_stats["runs_conceded"] / bowler_stats["overs"]
-    ).round(2)
-    bowler_stats["wickets_per_match"] = (
-        bowler_stats["wickets"] / bowler_stats["matches_played"]
-    ).round(2)
+    bowler_stats["economy_rate"] = economy_rate(bowler_stats["runs_conceded"], bowler_stats["balls_bowled"])
+    bowler_stats["overs"] = balls_to_overs(bowler_stats["balls_bowled"]).round(1)  # display only
+    bowler_stats["wickets_per_match"] = per_match(bowler_stats["wickets"], bowler_stats["matches_played"])
     bowler_stats["strike_rate_balls_per_wicket"] = np.where(
         bowler_stats["wickets"] > 0,
         (bowler_stats["balls_bowled"] / bowler_stats["wickets"]).round(1),
@@ -347,9 +430,9 @@ def generate_summary_statistics_df(df: pd.DataFrame) -> pd.DataFrame:
     overall_chase, _ = get_chase_success_rates(df)
     toss_stats = get_toss_impact(df)
     home_away = get_home_away_performance(df)
-    top_bat = get_top_batsmen(df, min_matches=10, limit=1).iloc[0]
-    top_bowl = get_top_bowlers(df, min_overs=20, limit=1).iloc[0]
-    team_stats = get_team_win_statistics(df, min_matches=30).iloc[0]
+    top_bat = get_top_batsmen(df, min_matches=MIN_BATTER_MATCHES_FILTER, limit=1).iloc[0]
+    top_bowl = get_top_bowlers(df, min_overs=MIN_BOWLER_OVERS_FILTER, limit=1).iloc[0]
+    team_stats = get_team_win_statistics(df, min_matches=MIN_TEAM_MATCHES_CONSISTENCY).iloc[0]
 
     min_yr = df["season_year"].min() if "season_year" in df.columns else df["season"].min()
     max_yr = df["season_year"].max() if "season_year" in df.columns else df["season"].max()
@@ -365,7 +448,7 @@ def generate_summary_statistics_df(df: pd.DataFrame) -> pd.DataFrame:
         ("Overall Chase Win Probability", f"{overall_chase:.1f}%"),
         ("Toss Winner Match Win Rate", f"{toss_stats['toss_win_percentage']:.1f}%"),
         ("Average Franchise Home Advantage", f"{home_away['home_advantage'].mean():.2f}%"),
-        ("Most Consistent Team (min 30 matches)", f"{team_stats['team']} ({team_stats['win_percentage']:.1f}%)"),
+        (f"Most Consistent Team (min {MIN_TEAM_MATCHES_CONSISTENCY} matches)", f"{team_stats['team']} ({team_stats['win_percentage']:.1f}%)"),
     ]
 
     return pd.DataFrame(metrics, columns=["Metric", "Value"])

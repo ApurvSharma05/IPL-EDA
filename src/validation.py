@@ -31,6 +31,7 @@ IPLDeliveriesSchema = DataFrameSchema(
         "runs": Column(int, Check.in_range(0, 7), nullable=False),
         "extras": Column(int, Check.in_range(0, 7), nullable=False),
         "runs_total": Column(int, Check.in_range(0, 10), nullable=False),
+        # Bowler-credited wicket flag (excludes run outs); not "any dismissal".
         "is_wicket": Column(int, Check.isin([0, 1]), nullable=False),
     },
     coerce=True,

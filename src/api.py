@@ -12,16 +12,15 @@ from src.metrics import (
     get_chase_success_rates,
     get_phase_scoring_rates,
     get_team_win_statistics,
-    get_top_batsmen,
-    get_top_bowlers,
-    generate_summary_statistics_df,
+    summarize_batter,
+    summarize_bowler,
 )
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="IPL Analytics Platform API",
-    description="High-performance analytical microservice for IPL cricket ball telemetry (2008-2024)",
+    description="Analytical microservice for IPL cricket ball telemetry (2008-2026)",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
@@ -60,41 +59,46 @@ def get_dataset() -> pd.DataFrame:
 
 class HealthResponse(BaseModel):
     status: str = Field(..., json_schema_extra={"example": "HEALTHY"})
-    records_loaded: int = Field(..., json_schema_extra={"example": 278205})
-    seasons_covered: str = Field(..., json_schema_extra={"example": "2008 - 2024"})
+    records_loaded: int = Field(..., json_schema_extra={"example": 295732})
+    seasons_covered: str = Field(
+        ...,
+        description="Min - max of `season_year`, which is the first year of the raw season label "
+        "(so the 2007/08 season shows as 2007)",
+        json_schema_extra={"example": "2007 - 2026"},
+    )
     version: str = Field(..., json_schema_extra={"example": "1.0.0"})
 
 
 class BatsmanCareerResponse(BaseModel):
     batter: str = Field(..., json_schema_extra={"example": "V Kohli"})
-    total_runs: int = Field(..., description="Total runs scored off bat", json_schema_extra={"example": 8671})
-    balls_faced: int = Field(..., description="Deliveries faced", json_schema_extra={"example": 6500})
-    strike_rate: float = Field(..., description="Runs scored per 100 balls", json_schema_extra={"example": 133.4})
-    matches_played: int = Field(..., json_schema_extra={"example": 259})
-    runs_per_match: float = Field(..., json_schema_extra={"example": 33.5})
+    total_runs: int = Field(..., description="Total runs scored off bat", json_schema_extra={"example": 9346})
+    balls_faced: int = Field(..., description="Deliveries faced", json_schema_extra={"example": 7127})
+    strike_rate: float = Field(..., description="Runs scored per 100 balls", json_schema_extra={"example": 131.14})
+    matches_played: int = Field(..., json_schema_extra={"example": 275})
+    runs_per_match: float = Field(..., json_schema_extra={"example": 33.99})
 
 
 class BowlerCareerResponse(BaseModel):
     bowler: str = Field(..., json_schema_extra={"example": "YS Chahal"})
-    wickets: int = Field(..., description="Total wickets taken", json_schema_extra={"example": 221})
-    runs_conceded: int = Field(..., description="Total runs conceded", json_schema_extra={"example": 4500})
-    overs_bowled: float = Field(..., description="Overs bowled", json_schema_extra={"example": 600.0})
-    economy_rate: float = Field(..., description="Runs per over", json_schema_extra={"example": 7.5})
-    wickets_per_match: float = Field(..., json_schema_extra={"example": 1.3})
+    wickets: int = Field(..., description="Bowler-credited wickets (excludes run outs)", json_schema_extra={"example": 233})
+    runs_conceded: int = Field(..., description="Total runs conceded", json_schema_extra={"example": 5417})
+    overs_bowled: float = Field(..., description="Overs bowled", json_schema_extra={"example": 694.5})
+    economy_rate: float = Field(..., description="Runs per over", json_schema_extra={"example": 7.8})
+    wickets_per_match: float = Field(..., json_schema_extra={"example": 1.27})
 
 
 class TeamStatsResponse(BaseModel):
     team: str = Field(..., json_schema_extra={"example": "Mumbai Indians"})
-    matches_played: int = Field(..., json_schema_extra={"example": 260})
-    matches_won: int = Field(..., json_schema_extra={"example": 151})
-    win_percentage: float = Field(..., json_schema_extra={"example": 58.08})
+    matches_played: int = Field(..., json_schema_extra={"example": 291})
+    matches_won: int = Field(..., json_schema_extra={"example": 155})
+    win_percentage: float = Field(..., json_schema_extra={"example": 53.26})
 
 
 class ChaseBucketItem(BaseModel):
     target_range: str = Field(..., json_schema_extra={"example": "Low (<130)"})
     attempts: int = Field(..., json_schema_extra={"example": 139})
     successful: int = Field(..., json_schema_extra={"example": 121})
-    success_rate: float = Field(..., json_schema_extra={"example": 87.1})
+    success_rate: float = Field(..., json_schema_extra={"example": 87.05})
 
 
 class ChaseAnalyticsResponse(BaseModel):
@@ -104,9 +108,9 @@ class ChaseAnalyticsResponse(BaseModel):
 
 class PhaseItem(BaseModel):
     phase: str = Field(..., json_schema_extra={"example": "PowerPlay (1-6)"})
-    total_runs: int = Field(..., json_schema_extra={"example": 85000})
-    overs: float = Field(..., json_schema_extra={"example": 10600.0})
-    runs_per_over: float = Field(..., json_schema_extra={"example": 7.97})
+    total_runs: int = Field(..., json_schema_extra={"example": 120503})
+    overs: float = Field(..., json_schema_extra={"example": 15484.0})
+    runs_per_over: float = Field(..., json_schema_extra={"example": 7.78})
 
 
 class PhaseAnalyticsResponse(BaseModel):
@@ -139,25 +143,15 @@ def get_batsman(name: str = Query(..., examples=["V Kohli"], description="Batsma
     if player_df.empty:
         raise HTTPException(status_code=404, detail=f"Batter '{name}' not found.")
 
-    runs = int(player_df["runs"].sum())
-    balls = int(len(player_df))
-    matches = int(player_df["match_id"].nunique())
-    sr = round((runs / balls * 100), 2) if balls > 0 else 0.0
-    rpm = round((runs / matches), 2) if matches > 0 else 0.0
-
-    return BatsmanCareerResponse(
-        batter=player_df["batter"].iloc[0],
-        total_runs=runs,
-        balls_faced=balls,
-        strike_rate=sr,
-        matches_played=matches,
-        runs_per_match=rpm,
-    )
+    return BatsmanCareerResponse(batter=player_df["batter"].iloc[0], **summarize_batter(player_df))
 
 
 @app.get("/api/v1/players/bowling", response_model=BowlerCareerResponse, tags=["Players"])
 def get_bowler(name: str = Query(..., examples=["YS Chahal"], description="Bowler full name")):
-    """Returns all-time career bowling telemetry for a specific player."""
+    """Returns all-time career bowling telemetry for a specific player.
+
+    `wickets` are bowler-credited wickets only (run outs are not included).
+    """
     df = get_dataset()
     match_mask = df["bowler"].str.lower() == name.strip().lower()
     player_df = df[match_mask]
@@ -165,29 +159,15 @@ def get_bowler(name: str = Query(..., examples=["YS Chahal"], description="Bowle
     if player_df.empty:
         raise HTTPException(status_code=404, detail=f"Bowler '{name}' not found.")
 
-    runs_col = "runs_conceded_bowler" if "runs_conceded_bowler" in player_df.columns else "runs_total"
-    wicket_col = "is_wicket" if "is_wicket" in player_df.columns else "wickets"
-
-    runs = int(player_df[runs_col].sum())
-    wickets = int(player_df[wicket_col].sum())
-    balls = int(len(player_df))
-    overs = round(balls / 6.0, 1)
-    matches = int(player_df["match_id"].nunique())
-    economy = round(runs / overs, 2) if overs > 0 else 0.0
-    wpm = round(wickets / matches, 2) if matches > 0 else 0.0
-
-    return BowlerCareerResponse(
-        bowler=player_df["bowler"].iloc[0],
-        wickets=wickets,
-        runs_conceded=runs,
-        overs_bowled=overs,
-        economy_rate=economy,
-        wickets_per_match=wpm,
-    )
+    return BowlerCareerResponse(bowler=player_df["bowler"].iloc[0], **summarize_bowler(player_df))
 
 
 @app.get("/api/v1/teams/summary", response_model=List[TeamStatsResponse], tags=["Teams"])
-def list_team_stats(min_matches: int = Query(0, description="Minimum matches played filter")):
+def list_team_stats(min_matches: int = Query(
+    0,
+    description="Minimum matches played filter. Defaults to 0 (no cutoff); the summary KPI "
+    "uses 30 (MIN_TEAM_MATCHES_CONSISTENCY), so pass min_matches=30 to match it.",
+)):
     """Returns all franchise win rates and appearance counts."""
     df = get_dataset()
     stats = get_team_win_statistics(df, min_matches=min_matches)

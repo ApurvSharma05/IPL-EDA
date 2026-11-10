@@ -4,10 +4,10 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.141+-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![Pandera Contracts](https://img.shields.io/badge/Data%20Contracts-Pandera-orange.svg)](https://pandera.readthedocs.io/)
 [![Docker](https://img.shields.io/badge/Docker-Containerized-2496ED.svg?logo=docker&logoColor=white)](https://www.docker.com/)
-[![Tests](https://img.shields.io/badge/pytest-15%2F15%20passing-brightgreen.svg)](https://docs.pytest.org/)
+[![Tests](https://img.shields.io/badge/pytest-25%2F25%20passing-brightgreen.svg)](https://docs.pytest.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-An enterprise-grade sports analytics platform and data engineering pipeline analyzing **17 seasons of Indian Premier League (IPL) cricket** (2008–2024/2025). The platform processes over **295,000 ball-by-ball delivery events across 1,240+ matches**, enforcing strict Pandera data validation contracts and serving sub-10ms analytical queries via a containerized FastAPI microservice.
+An enterprise-grade sports analytics platform and data engineering pipeline analyzing **19 seasons of Indian Premier League (IPL) cricket** (2008–2026). The platform processes **295,732 ball-by-ball delivery events across 1,243 matches**, enforcing strict Pandera data validation contracts and serving analytical queries via a containerized FastAPI microservice (latency has not been benchmarked).
 
 ---
 
@@ -40,12 +40,12 @@ This project transforms unstructured delivery events into a verified, production
 
 | Analytical Focus | Finding / Metric | Strategic Implication |
 | :--- | :--- | :--- |
-| **Death Over Acceleration** | **+2.15 runs/over jump** (7.87 RPO in Middle overs $\rightarrow$ 10.02 RPO in Death overs) | Batting units aggressively trade wicket preservation for boundary maximization in overs 16–20. |
+| **Death Over Acceleration** | **+1.84 runs/over jump** (7.71 RPO in Middle overs $\rightarrow$ 9.55 RPO in Death overs) | Batting units aggressively trade wicket preservation for boundary maximization in overs 16–20. |
 | **Chase Target Viability** | **53.8% overall chase win rate** (<130: **87.1%**, 130–159: **70.2%**, 160+: **40.6%**) | Crossing the 160-run threshold creates a defensive psychological cliff, cutting chase success by over 46%. |
 | **Toss Bias** | **50.5% toss winner match win rate** | Statistically indistinguishable from a random 50/50 coin toss; team quality and execution vastly outweigh toss outcomes. |
 | **Home Advantage** | **+1.30% league-wide home advantage** (Rajasthan Royals peak at **+23.0%**) | Franchise variance is massive; stadium geometry and pitch curation strongly benefit specialized rosters. |
-| **All-Time Run Leader** | **V Kohli (9,340+ career runs, SR: 133+)** | Demonstrates unmatched longevity and top-order volume accumulation over 250+ matches. |
-| **All-Time Wickets Leader** | **YS Chahal (230+ career wickets, ER: 8.09)** | Proves high-volume leg-spin wicket-taking value despite aggressive batting conditions. |
+| **All-Time Run Leader** | **V Kohli (9,346 career runs, SR: 131.1)** | Demonstrates unmatched longevity and top-order volume accumulation over 250+ matches. |
+| **All-Time Wickets Leader** | **YS Chahal (233 bowler-credited wickets, ER: 7.80)** | Proves high-volume leg-spin wicket-taking value despite aggressive batting conditions. |
 
 ---
 
@@ -94,8 +94,8 @@ Once the server is running, explore interactive docs at:
 | :--- | :--- | :--- | :--- |
 | `GET` | `/health` | Service health status and loaded dataset metadata | `/health` |
 | `GET` | `/api/v1/players/batting` | Career batting stats (runs, balls, strike rate, matches) | `/api/v1/players/batting?name=V%20Kohli` |
-| `GET` | `/api/v1/players/bowling` | Career bowling stats (wickets, runs conceded, overs, ER) | `/api/v1/players/bowling?name=YS%20Chahal` |
-| `GET` | `/api/v1/teams/summary` | All franchise win totals and win percentages | `/api/v1/teams/summary?min_matches=30` |
+| `GET` | `/api/v1/players/bowling` | Career bowling stats (bowler-credited wickets, runs conceded, overs, ER) | `/api/v1/players/bowling?name=YS%20Chahal` |
+| `GET` | `/api/v1/teams/summary` | All franchise win totals and win percentages (`min_matches` defaults to 0, i.e. no cutoff) | `/api/v1/teams/summary?min_matches=30` |
 | `GET` | `/api/v1/teams/{team_name}` | Specific franchise performance record | `/api/v1/teams/Mumbai%20Indians` |
 | `GET` | `/api/v1/analytics/chase-success` | Chase win probability by target bucket (<130, 130-159, 160+) | `/api/v1/analytics/chase-success` |
 | `GET` | `/api/v1/analytics/over-phases` | Scoring rates (runs/over) across PowerPlay, Middle, and Death | `/api/v1/analytics/over-phases` |
@@ -108,10 +108,10 @@ curl -X GET "http://localhost:8000/api/v1/players/batting?name=V%20Kohli"
 {
   "batter": "V Kohli",
   "total_runs": 9346,
-  "balls_faced": 7035,
-  "strike_rate": 132.85,
-  "matches_played": 274,
-  "runs_per_match": 34.11
+  "balls_faced": 7127,
+  "strike_rate": 131.14,
+  "matches_played": 275,
+  "runs_per_match": 33.99
 }
 ```
 
@@ -147,6 +147,11 @@ During the senior engineering review documented in [`PROJECT_REVIEW.md`](./PROJE
 4. **Authentic Cleaned Dataset Export:**
    - *Problem:* Exported raw `ipl` with zero engineered features.
    - *Fix:* Export routine now serializes the fully engineered gold dataset `ipl_cleaned_data.csv`.
+
+### Metric definitions worth knowing
+- **`is_wicket` means bowler-credited wickets** (it equals the raw `bowler_wicket` flag: 13,488 rows). Run outs and similar dismissals are excluded, so it is not a count of every dismissal (14,705 rows have a dismissed player; use `src.metrics.count_dismissals`). Bowler `wickets` in the API follow the same rule.
+- **One formula source:** strike rate, economy (`runs / (balls / 6)`, overs are not rounded before dividing) and per-match averages live in `src/metrics.py` and are used by both the leaderboards and the API handlers.
+- **Known limitation:** `season_year` takes the first year of the raw season label, so `2007/08` shows as 2007 and `/health` reports "2007 - 2026"; the data itself covers the 2008 to 2026 seasons.
 
 ---
 
@@ -212,26 +217,14 @@ docker compose down
 
 ## 🧪 Automated Test Suite
 
-The repository includes a comprehensive 15-test suite covering data cleaning, cricket metric formulas, Pandera schema enforcement, and FastAPI endpoints:
+The repository includes a 25-test suite covering data cleaning, cricket metric formulas, Pandera schema enforcement, and FastAPI endpoints. Tests are self-contained: the API tests run against a small in-memory fixture (`tests/conftest.py`), so they pass on a clean checkout without `data/IPL.csv` or the pipeline having run.
 
 ```bash
 # Run pytest with verbose reporting
 pytest -v
 ```
 
-Expected output:
-```
-tests/test_api.py::test_health_endpoint PASSED
-tests/test_api.py::test_get_batsman_endpoint_valid PASSED
-tests/test_api.py::test_get_bowler_endpoint_valid PASSED
-tests/test_api.py::test_get_teams_summary PASSED
-tests/test_api.py::test_get_chase_analytics PASSED
-tests/test_data_cleaning.py::test_clean_ipl_telemetry_team_standardization PASSED
-tests/test_data_cleaning.py::test_clean_ipl_telemetry_metrics_derivation PASSED
-tests/test_metrics.py::test_get_chase_success_accuracy PASSED
-tests/test_validation.py::test_validation_schema_valid_data PASSED
-====================== 15 passed in 14.92s =======================
-```
+Expected result: `25 passed`.
 
 ---
 
@@ -253,10 +246,11 @@ IPL-EDA/
 │   ├── api.py                    # Production FastAPI microservice & Pydantic models
 │   ├── config.py                 # Central constants, color palettes, and threshold configs
 │   ├── data_cleaning.py          # Robust ETL pipeline & feature engineering
-│   ├── metrics.py                # Pure statistical calculations (chase, phase, players)
+│   ├── metrics.py                # Pure statistical calculations and the shared metric formulas
 │   └── validation.py             # Pandera schema contracts & golden benchmark suite
 ├── tests/
 │   ├── __init__.py
+│   ├── conftest.py               # Deterministic in-memory dataset + API client fixtures
 │   ├── test_api.py               # Integration tests for REST endpoints
 │   ├── test_data_cleaning.py     # Unit tests for preprocessing & entity normalization
 │   ├── test_metrics.py           # Verification of cricket formula edge-cases

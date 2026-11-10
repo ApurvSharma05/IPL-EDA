@@ -68,9 +68,7 @@ TARGET_MEDIUM = "Medium (130-159)"
 TARGET_HIGH = "High (160+)"
 TARGET_ORDER = [TARGET_LOW, TARGET_MEDIUM, TARGET_HIGH]
 
-# Analytical Thresholds
-MIN_CAREER_RUNS_FILTER = 100
-MIN_CAREER_BALLS_FILTER = 60
+# Analytical Thresholds (defaults for the leaderboard functions in src/metrics.py)
 MIN_BATTER_MATCHES_FILTER = 10
 MIN_BOWLER_OVERS_FILTER = 20
 MIN_TEAM_MATCHES_CONSISTENCY = 30
