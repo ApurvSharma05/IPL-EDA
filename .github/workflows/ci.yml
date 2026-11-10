@@ -23,6 +23,9 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
+    # Tests are self-contained (in-memory fixtures in tests/conftest.py plus the checked-in
+    # data/sample_deliveries.csv); they do not need data/IPL.csv or the cleaned CSV, so they
+    # run before the pipeline step.
     - name: Run Test Suite
       run: |
         pytest -v

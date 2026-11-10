@@ -86,6 +86,11 @@ def clean_ipl_telemetry(raw_df: pd.DataFrame) -> pd.DataFrame:
     3. Proper datetime parsing.
     4. Cricket-compliant bowler runs conceded (excludes byes/leg-byes).
     5. Phase segmentation (PowerPlay, Middle, Death).
+
+    Wicket semantics: `wickets` / `is_wicket` mean wickets CREDITED TO THE BOWLER (they come from
+    the raw `bowler_wicket` flag and exclude run outs, retired out, etc.). They are not a count
+    of every dismissal; `player_dismissed` / `dismissal_kind` carry those (see
+    `src.metrics.count_dismissals`).
     """
     df = raw_df.copy()
 
@@ -148,7 +153,8 @@ def clean_ipl_telemetry(raw_df: pd.DataFrame) -> pd.DataFrame:
     else:
         df["runs_conceded_bowler"] = df["runs_total"]
 
-    # Binary wicket indicator
+    # Binary BOWLER-credited wicket indicator (13,488 rows on the full data). It is NOT
+    # "any dismissal": run outs etc. are excluded. Use src.metrics.count_dismissals for those.
     df["is_wicket"] = (df["wickets"] > 0).astype(int)
 
     # Over phase categorization (0-indexed over)
